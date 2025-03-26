@@ -1,6 +1,3 @@
-// This file defines a `LoanForm` widget which is a stateful widget
-// that displays a loan application form.
-
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -10,7 +7,9 @@ import 'package:inbank_frontend/widgets/national_id_field.dart';
 import '../api_service.dart';
 import '../colors.dart';
 
-// LoanForm is a StatefulWidget that displays a loan application form.
+const int minLoanPeriod = 12;
+const int maxLoanPeriod = 48;
+
 class LoanForm extends StatefulWidget {
   const LoanForm({Key? key}) : super(key: key);
 
@@ -27,40 +26,41 @@ class _LoanFormState extends State<LoanForm> {
   int _loanAmountResult = 0;
   int _loanPeriodResult = 0;
   String _errorMessage = '';
+  bool _isLoading = false;
 
-  // Submit the form and update the state with the loan decision results.
-  // Only submits if the form inputs are validated.
   void _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      final result = await _apiService.requestLoanDecision(
-          _nationalId, _loanAmount, _loanPeriod);
-      setState(() {
-        int tempAmount = int.parse(result['loanAmount'].toString());
-        int tempPeriod = int.parse(result['loanPeriod'].toString());
+    if (!_formKey.currentState!.validate()) return;
 
-        if (tempAmount <= _loanAmount || tempPeriod > _loanPeriod) {
-          _loanAmountResult = int.parse(result['loanAmount'].toString());
-          _loanPeriodResult = int.parse(result['loanPeriod'].toString());
-        } else {
-          _loanAmountResult = _loanAmount;
-          _loanPeriodResult = _loanPeriod;
-        }
-        _errorMessage = result['errorMessage'].toString();
-      });
-    } else {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
       _loanAmountResult = 0;
       _loanPeriodResult = 0;
-    }
+    });
+
+    final result = await _apiService.requestLoanDecision(
+      _nationalId,
+      _loanAmount,
+      _loanPeriod,
+    );
+
+    setState(() {
+      _isLoading = false;
+      if (result['errorMessage'] != null && result['errorMessage'] != '') {
+        _errorMessage = result['errorMessage'].toString();
+      } else {
+        _loanAmountResult = int.tryParse(result['loanAmount'].toString()) ?? 0;
+        _loanPeriodResult = int.tryParse(result['loanPeriod'].toString()) ?? 0;
+      }
+    });
   }
 
-  // Builds the application form widget.
-  // The widget automatically queries the endpoint for the latest data
-  // when a field is changed.
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final formWidth = screenWidth / 3;
     const minWidth = 500.0;
+
     return Expanded(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -80,7 +80,6 @@ class _LoanFormState extends State<LoanForm> {
                             onChanged: (value) {
                               setState(() {
                                 _nationalId = value ?? '';
-                                _submitForm();
                               });
                             },
                           ),
@@ -98,10 +97,11 @@ class _LoanFormState extends State<LoanForm> {
                     divisions: 80,
                     label: '$_loanAmount €',
                     activeColor: AppColors.secondaryColor,
-                    onChanged: (double newValue) {
+                    onChanged: _isLoading
+                        ? null
+                        : (double newValue) {
                       setState(() {
                         _loanAmount = ((newValue.floor() / 100).round() * 100);
-                        _submitForm();
                       });
                     },
                   ),
@@ -112,8 +112,9 @@ class _LoanFormState extends State<LoanForm> {
                         child: Padding(
                           padding: EdgeInsets.only(left: 12),
                           child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text('2000€')),
+                            alignment: Alignment.centerLeft,
+                            child: Text('2000€'),
+                          ),
                         ),
                       ),
                       Expanded(
@@ -124,7 +125,7 @@ class _LoanFormState extends State<LoanForm> {
                             child: Text('10000€'),
                           ),
                         ),
-                      )
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24.0),
@@ -132,15 +133,16 @@ class _LoanFormState extends State<LoanForm> {
                   const SizedBox(height: 8),
                   Slider.adaptive(
                     value: _loanPeriod.toDouble(),
-                    min: 12,
-                    max: 60,
-                    divisions: 40,
+                    min: minLoanPeriod.toDouble(),
+                    max: maxLoanPeriod.toDouble(),
+                    divisions: (maxLoanPeriod - minLoanPeriod) ~/ 6,
                     label: '$_loanPeriod months',
                     activeColor: AppColors.secondaryColor,
-                    onChanged: (double newValue) {
+                    onChanged: _isLoading
+                        ? null
+                        : (double newValue) {
                       setState(() {
                         _loanPeriod = ((newValue.floor() / 6).round() * 6);
-                        _submitForm();
                       });
                     },
                   ),
@@ -151,8 +153,9 @@ class _LoanFormState extends State<LoanForm> {
                         child: Padding(
                           padding: EdgeInsets.only(left: 12),
                           child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text('6 months')),
+                            alignment: Alignment.centerLeft,
+                            child: Text('12 months'),
+                          ),
                         ),
                       ),
                       Expanded(
@@ -160,13 +163,26 @@ class _LoanFormState extends State<LoanForm> {
                           padding: EdgeInsets.only(right: 12),
                           child: Align(
                             alignment: Alignment.centerRight,
-                            child: Text('60 months'),
+                            child: Text('48 months'),
                           ),
                         ),
-                      )
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24.0),
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _submitForm,
+                    child: _isLoading
+                        ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                        : const Text('Submit'),
+                  ),
                 ],
               ),
             ),
@@ -174,14 +190,38 @@ class _LoanFormState extends State<LoanForm> {
           const SizedBox(height: 16.0),
           Column(
             children: [
-              Text(
-                  'Approved Loan Amount: ${_loanAmountResult != 0 ? _loanAmountResult : "--"} €'),
+              Text('Approved Loan Amount: ${_loanAmountResult != 0 ? _loanAmountResult : "--"} €'),
               const SizedBox(height: 8.0),
-              Text(
-                  'Approved Loan Period: ${_loanPeriodResult != 0 ? _loanPeriodResult : "--"} months'),
+              Text('Approved Loan Period: ${_loanPeriodResult != 0 ? _loanPeriodResult : "--"} months'),
               Visibility(
-                  visible: _errorMessage != '',
-                  child: Text(_errorMessage, style: errorMedium))
+                visible: _errorMessage.isNotEmpty,
+                child: Builder(
+                  builder: (context) {
+                    final lowerError = _errorMessage.toLowerCase();
+
+                    if (lowerError.contains('under the minimum age')) {
+                      return Text(
+                        'You must be at least 18 years old to apply.',
+                        style: errorMedium.copyWith(fontWeight: FontWeight.bold),
+                      );
+                    } else if (lowerError.contains('exceeds maximum')) {
+                      return Text(
+                        'You are above the eligible age limit for a loan.',
+                        style: errorMedium.copyWith(fontWeight: FontWeight.bold),
+                      );
+                    } else if (lowerError.contains('age')) {
+                      return Text(
+                        'You are not eligible due to age requirements.',
+                        style: errorMedium.copyWith(fontWeight: FontWeight.bold),
+                      );
+                    } else {
+                      return Text(_errorMessage, style: errorMedium);
+                    }
+                  },
+                ),
+              )
+
+
             ],
           ),
         ],

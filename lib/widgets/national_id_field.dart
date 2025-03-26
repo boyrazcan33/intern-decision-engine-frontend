@@ -42,7 +42,7 @@ class NationalIdTextFormField extends StatelessWidget {
 
       // Rudimentary client side verification of the ID code
       validator: validator ??
-          (value) {
+              (value) {
             if (value == null || value.isEmpty) {
               return 'Please enter a National ID.';
             }
